@@ -1,5 +1,19 @@
 import type { Request } from '@sveltejs/kit';
 import type { Locals } from '$lib/types';
+// import { PrismaClient } from '@prisma/client';
+// const prisma = new PrismaClient();
+
+import pkg from '@prisma/client';
+const { PrismaClient } = pkg;
+const prisma = new PrismaClient();
+
+export type Todo = {
+	uid: string;
+	created_at: Date;
+	text: string;
+	done: boolean;
+	pending_delete: boolean;
+};
 
 /*
 	This module is used by the /todos.json and /todos/[uid].json
@@ -14,25 +28,56 @@ import type { Locals } from '$lib/types';
 
 const base = 'https://api.svelte.dev';
 
-export async function api(request: Request<Locals>, resource: string, data?: {}) {
+export async function api(request: Request<Locals>, resource: string, data?: Todo) {
 	// user must have a cookie set
 	if (!request.locals.userid) {
 		return { status: 401 };
 	}
 
-	const res = await fetch(`${base}/${resource}`, {
-		method: request.method,
-		headers: {
-			'content-type': 'application/json'
-		},
-		body: data && JSON.stringify(data)
-	});
-
+	let body = {};
+	let status = 500;
+	switch (request.method.toUpperCase()) {
+		case 'DELETE':
+			await prisma.todo.delete({
+				where: {
+					uid: resource.split('/').pop()
+				}
+			});
+			status = 200;
+			break;
+		case 'GET':
+			body = await prisma.todo.findMany();
+			console.log(body);
+			status = 200;
+			break;
+		case 'PATCH':
+			body = await prisma.todo.update({
+				data: {
+					done: data.done,
+					text: data.text
+				},
+				where: {
+					uid: resource.split('/').pop()
+				}
+			});
+			status = 200;
+			break;
+		case 'POST':
+			body = await prisma.todo.create({
+				data: {
+					created_at: new Date(),
+					done: false,
+					text: data.text
+				}
+			});
+			status = 201;
+			break;
+	}
 	// if the request came from a <form> submission, the browser's default
 	// behaviour is to show the URL corresponding to the form's "action"
 	// attribute. in those cases, we want to redirect them back to the
 	// /todos page, rather than showing the response
-	if (res.ok && request.method !== 'GET' && request.headers.accept !== 'application/json') {
+	if (request.method !== 'GET' && request.headers.accept !== 'application/json') {
 		return {
 			status: 303,
 			headers: {
@@ -42,7 +87,7 @@ export async function api(request: Request<Locals>, resource: string, data?: {})
 	}
 
 	return {
-		status: res.status,
-		body: await res.json()
+		status,
+		body
 	};
 }
